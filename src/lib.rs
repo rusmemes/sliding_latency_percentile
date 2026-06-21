@@ -289,8 +289,10 @@ fn flush(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::AtomicBool;
     use super::*;
     use std::thread;
+    use std::time::Duration;
 
     #[test]
     fn latency_to_bin_linear() {
@@ -586,5 +588,46 @@ mod tests {
 
         assert!(first_p99 < 100, "first_p99={first_p99}");
         assert!(second_p99 >= 900, "second_p99={second_p99}");
+    }
+
+    #[test]
+    fn write_requests_per_second() {
+        let metrics_service = Arc::new(MetricsService::new());
+        const THREADS: usize = 16;
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let ops = Arc::new(AtomicU64::new(0));
+
+        let mut handles = Vec::new();
+
+        for _ in 0..THREADS {
+            let stop = stop.clone();
+            let ops = ops.clone();
+            let service_clone = metrics_service.clone();
+            handles.push(thread::spawn(move || {
+                while !stop.load(Ordering::Relaxed) {
+                    service_clone.record_latency(500);
+                    ops.fetch_add(1, Ordering::Relaxed);
+                }
+                service_clone.flush_thread_local();
+            }));
+        }
+
+        let start = Instant::now();
+
+        thread::sleep(Duration::from_secs(10));
+
+        stop.store(true, Ordering::Relaxed);
+
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        println!("{}", metrics_service.latency_ms(99));
+
+        let total = ops.load(Ordering::Relaxed);
+
+        println!("ops={}", total);
+        println!("ops/sec={}", total as f64 / start.elapsed().as_secs_f64());
     }
 }
