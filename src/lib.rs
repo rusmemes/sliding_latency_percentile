@@ -9,7 +9,7 @@ use std::time::Instant;
 const WINDOW: u64 = 10;
 const BUCKETS: usize = WINDOW as usize + 1;
 const STRIPES: usize = 64;
-const FLUSH_EVERY: u32 = 64;
+const FLUSH_EVERY: u32 = 512;
 
 const LINEAR_MAX_MS: u64 = 5000;
 const LINEAR_STEP: u64 = 10;
