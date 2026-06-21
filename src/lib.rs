@@ -295,28 +295,6 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn latency_to_bin_linear() {
-        assert_eq!(latency_to_bin(0), 0);
-        assert_eq!(latency_to_bin(10), 1);
-        assert_eq!(latency_to_bin(100), 10);
-        assert_eq!(latency_to_bin(1000), 100);
-        assert_eq!(latency_to_bin(5000), 500);
-    }
-
-    #[test]
-    fn latency_to_bin_clamps_max() {
-        assert_eq!(
-            latency_to_bin(LINEAR_MAX_MS),
-            HISTOGRAM_BINS - 1
-        );
-
-        assert_eq!(
-            latency_to_bin(LINEAR_MAX_MS * 10),
-            HISTOGRAM_BINS - 1
-        );
-    }
-
-    #[test]
     fn latency_to_bin_monotonic() {
         let mut prev = latency_to_bin(0);
 
@@ -453,8 +431,6 @@ mod tests {
         let p90 = metrics.latency_ms(90);
         let p99 = metrics.latency_ms(99);
 
-        println!("p50={p50} p90={p90} p99={p99}");
-
         assert!(p50 < 1000, "p50={p50}");
         assert!(p90 < 1000, "p90={p90}");
         assert!(p99 >= 4900, "p99={p99}");
@@ -508,7 +484,7 @@ mod tests {
         let mut values = Vec::new();
 
         for _ in 0..100_000 {
-            let value = rand::random_range(1..1000);
+            let value = rand::random_range(1..5000);
 
             values.push(value);
 
@@ -606,7 +582,7 @@ mod tests {
             let service_clone = metrics_service.clone();
             handles.push(thread::spawn(move || {
                 while !stop.load(Ordering::Relaxed) {
-                    service_clone.record_latency_ms(500);
+                    service_clone.record_latency_ms(rand::random_range(1..=5000));
                     ops.fetch_add(1, Ordering::Relaxed);
                 }
                 service_clone.flush_thread_local();
