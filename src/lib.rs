@@ -11,11 +11,10 @@ const BUCKETS: usize = WINDOW as usize + 1;
 const STRIPES: usize = 64;
 const FLUSH_EVERY: u32 = 64;
 
-const HISTOGRAM_BINS: usize = 152;
-const LINEAR_MAX_MS: u64 = 1000;
-const LINEAR_STEP: u64 = 10;
+const LINEAR_MAX_MS: u64 = 5000;
+const LINEAR_STEP: u64 = 5;
 const LINEAR_BINS: usize = (LINEAR_MAX_MS / LINEAR_STEP) as usize;
-const MAX_LATENCY_MS: u64 = 5000;
+const HISTOGRAM_BINS: usize = LINEAR_BINS + 1;
 
 static NEXT_SERVICE_ID: AtomicUsize = AtomicUsize::new(1);
 
@@ -169,7 +168,7 @@ impl MetricsService {
             }
         }
 
-        MAX_LATENCY_MS
+        LINEAR_MAX_MS
     }
 
     #[inline(always)]
@@ -239,15 +238,8 @@ fn get_stripe() -> usize {
 fn latency_to_bin(lat_ms: u64) -> usize {
     if lat_ms <= LINEAR_MAX_MS {
         (lat_ms / LINEAR_STEP) as usize
-    } else if lat_ms >= MAX_LATENCY_MS {
-        HISTOGRAM_BINS - 1
     } else {
-        let log_bins_start = LINEAR_BINS;
-        let remaining_bins = HISTOGRAM_BINS - log_bins_start - 1;
-        let log_val = ((lat_ms as f64).log2() - 10.0).max(0.0);
-        let scale = (log_val * remaining_bins as f64 / 3.0) as usize;
-
-        log_bins_start + scale.min(remaining_bins)
+        HISTOGRAM_BINS - 1
     }
 }
 
@@ -255,15 +247,8 @@ fn latency_to_bin(lat_ms: u64) -> usize {
 fn bin_to_latency_ms(bin: usize) -> u64 {
     if bin < LINEAR_BINS {
         (bin as u64) * LINEAR_STEP
-    } else if bin == HISTOGRAM_BINS - 1 {
-        MAX_LATENCY_MS
     } else {
-        let log_bins_start = LINEAR_BINS;
-        let offset = bin - log_bins_start;
-        let remaining = (HISTOGRAM_BINS - log_bins_start - 1).max(1);
-        let exp = 10.0 + (offset as f64) * 3.0 / remaining as f64;
-
-        2u64.pow(exp as u32).min(MAX_LATENCY_MS)
+        LINEAR_MAX_MS
     }
 }
 
@@ -310,20 +295,21 @@ mod tests {
     #[test]
     fn latency_to_bin_linear() {
         assert_eq!(latency_to_bin(0), 0);
-        assert_eq!(latency_to_bin(10), 1);
-        assert_eq!(latency_to_bin(100), 10);
-        assert_eq!(latency_to_bin(1000), 100);
+        assert_eq!(latency_to_bin(10), 2);
+        assert_eq!(latency_to_bin(100), 20);
+        assert_eq!(latency_to_bin(1000), 200);
+        assert_eq!(latency_to_bin(5000), 1000);
     }
 
     #[test]
     fn latency_to_bin_clamps_max() {
         assert_eq!(
-            latency_to_bin(MAX_LATENCY_MS),
+            latency_to_bin(LINEAR_MAX_MS),
             HISTOGRAM_BINS - 1
         );
 
         assert_eq!(
-            latency_to_bin(MAX_LATENCY_MS * 10),
+            latency_to_bin(LINEAR_MAX_MS * 10),
             HISTOGRAM_BINS - 1
         );
     }
@@ -364,7 +350,7 @@ mod tests {
     fn last_bin_maps_to_max_latency() {
         assert_eq!(
             bin_to_latency_ms(HISTOGRAM_BINS - 1),
-            MAX_LATENCY_MS
+            LINEAR_MAX_MS
         );
     }
 
@@ -452,11 +438,11 @@ mod tests {
         let metrics = MetricsService::new();
 
         for _ in 0..99_000 {
-            metrics.record_latency(10);
+            metrics.record_latency(100);
         }
 
         for _ in 0..1_000 {
-            metrics.record_latency(1000);
+            metrics.record_latency(5000);
         }
 
         metrics.flush_thread_local();
@@ -467,9 +453,9 @@ mod tests {
 
         println!("p50={p50} p90={p90} p99={p99}");
 
-        assert!(p50 < 100, "p50={p50}");
-        assert!(p90 < 100, "p90={p90}");
-        assert!(p99 >= 900, "p99={p99}");
+        assert!(p50 < 1000, "p50={p50}");
+        assert!(p90 < 1000, "p90={p90}");
+        assert!(p99 >= 4900, "p99={p99}");
     }
 
     #[test]
