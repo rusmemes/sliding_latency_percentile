@@ -12,7 +12,7 @@ const STRIPES: usize = 64;
 const FLUSH_EVERY: u32 = 64;
 
 const LINEAR_MAX_MS: u64 = 5000;
-const LINEAR_STEP: u64 = 5;
+const LINEAR_STEP: u64 = 10;
 const LINEAR_BINS: usize = (LINEAR_MAX_MS / LINEAR_STEP) as usize;
 const HISTOGRAM_BINS: usize = LINEAR_BINS + 1;
 
@@ -295,10 +295,10 @@ mod tests {
     #[test]
     fn latency_to_bin_linear() {
         assert_eq!(latency_to_bin(0), 0);
-        assert_eq!(latency_to_bin(10), 2);
-        assert_eq!(latency_to_bin(100), 20);
-        assert_eq!(latency_to_bin(1000), 200);
-        assert_eq!(latency_to_bin(5000), 1000);
+        assert_eq!(latency_to_bin(10), 1);
+        assert_eq!(latency_to_bin(100), 10);
+        assert_eq!(latency_to_bin(1000), 100);
+        assert_eq!(latency_to_bin(5000), 500);
     }
 
     #[test]
