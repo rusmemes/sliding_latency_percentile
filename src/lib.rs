@@ -64,12 +64,12 @@ impl MetricsState {
 }
 
 #[derive(Clone)]
-pub struct MetricsService {
+pub struct LatencyTracker {
     id: usize,
     state: Arc<MetricsState>,
 }
 
-impl MetricsService {
+impl LatencyTracker {
     pub fn new() -> Self {
         Self {
             id: NEXT_SERVICE_ID.fetch_add(1, Ordering::Relaxed),
@@ -78,7 +78,7 @@ impl MetricsService {
     }
 
     #[inline(always)]
-    pub fn record_latency(&self, lat_ms: u64) {
+    pub fn record_latency_ms(&self, lat_ms: u64) {
         let now = self.state.now_sec();
         let bin = latency_to_bin(lat_ms);
         let stripe = get_stripe();
@@ -185,7 +185,7 @@ impl MetricsService {
     }
 }
 
-impl Default for MetricsService {
+impl Default for LatencyTracker {
     fn default() -> Self {
         Self::new()
     }
@@ -358,7 +358,7 @@ mod tests {
 
     #[test]
     fn invalid_percentile_returns_zero() {
-        let metrics = MetricsService::new();
+        let metrics = LatencyTracker::new();
 
         assert_eq!(metrics.latency_ms(100), 0);
         assert_eq!(metrics.latency_ms(255), 0);
@@ -366,10 +366,10 @@ mod tests {
 
     #[test]
     fn percentile_ordering() {
-        let metrics = MetricsService::new();
+        let metrics = LatencyTracker::new();
 
         for value in 1..=1000 {
-            metrics.record_latency(value);
+            metrics.record_latency_ms(value);
         }
 
         metrics.flush_thread_local();
@@ -386,10 +386,10 @@ mod tests {
 
     #[test]
     fn constant_distribution() {
-        let metrics = MetricsService::new();
+        let metrics = LatencyTracker::new();
 
         for _ in 0..20_000 {
-            metrics.record_latency(500);
+            metrics.record_latency_ms(500);
         }
 
         metrics.flush_thread_local();
@@ -405,11 +405,11 @@ mod tests {
 
     #[test]
     fn uniform_distribution() {
-        let metrics = MetricsService::new();
+        let metrics = LatencyTracker::new();
 
         for value in 1..=1000 {
             for _ in 0..100 {
-                metrics.record_latency(value);
+                metrics.record_latency_ms(value);
             }
         }
 
@@ -437,14 +437,14 @@ mod tests {
 
     #[test]
     fn heavy_tail_distribution() {
-        let metrics = MetricsService::new();
+        let metrics = LatencyTracker::new();
 
         for _ in 0..99_000 {
-            metrics.record_latency(100);
+            metrics.record_latency_ms(100);
         }
 
         for _ in 0..1_000 {
-            metrics.record_latency(5000);
+            metrics.record_latency_ms(5000);
         }
 
         metrics.flush_thread_local();
@@ -462,10 +462,10 @@ mod tests {
 
     #[test]
     fn flush_thread_local_makes_data_visible() {
-        let metrics = MetricsService::new();
+        let metrics = LatencyTracker::new();
 
         for _ in 0..10 {
-            metrics.record_latency(500);
+            metrics.record_latency_ms(500);
         }
 
         metrics.flush_thread_local();
@@ -475,7 +475,7 @@ mod tests {
 
     #[test]
     fn multi_threaded_recording() {
-        let metrics = MetricsService::new();
+        let metrics = LatencyTracker::new();
         let mut handles = Vec::new();
 
         for _ in 0..16 {
@@ -483,7 +483,7 @@ mod tests {
 
             handles.push(thread::spawn(move || {
                 for _ in 0..10_000 {
-                    metrics.record_latency(500);
+                    metrics.record_latency_ms(500);
                 }
 
                 metrics.flush_thread_local();
@@ -504,7 +504,7 @@ mod tests {
 
     #[test]
     fn percentile_close_to_real_distribution() {
-        let metrics = MetricsService::new();
+        let metrics = LatencyTracker::new();
         let mut values = Vec::new();
 
         for _ in 0..100_000 {
@@ -512,7 +512,7 @@ mod tests {
 
             values.push(value);
 
-            metrics.record_latency(value);
+            metrics.record_latency_ms(value);
         }
 
         metrics.flush_thread_local();
@@ -533,10 +533,10 @@ mod tests {
 
     #[test]
     fn million_samples_stress() {
-        let metrics = MetricsService::new();
+        let metrics = LatencyTracker::new();
 
         for i in 0..1_000_000 {
-            metrics.record_latency((i % 1000 + 1) as u64);
+            metrics.record_latency_ms((i % 1000 + 1) as u64);
         }
 
         metrics.flush_thread_local();
@@ -551,15 +551,15 @@ mod tests {
 
     #[test]
     fn services_are_isolated() {
-        let first = MetricsService::new();
-        let second = MetricsService::new();
+        let first = LatencyTracker::new();
+        let second = LatencyTracker::new();
 
         for _ in 0..10_000 {
-            first.record_latency(10);
+            first.record_latency_ms(10);
         }
 
         for _ in 0..10_000 {
-            second.record_latency(1000);
+            second.record_latency_ms(1000);
         }
 
         first.flush_thread_local();
@@ -574,11 +574,11 @@ mod tests {
 
     #[test]
     fn services_are_isolated_in_same_thread_before_flush() {
-        let first = MetricsService::new();
-        let second = MetricsService::new();
+        let first = LatencyTracker::new();
+        let second = LatencyTracker::new();
 
-        first.record_latency(10);
-        second.record_latency(1000);
+        first.record_latency_ms(10);
+        second.record_latency_ms(1000);
 
         first.flush_thread_local();
         second.flush_thread_local();
@@ -592,7 +592,7 @@ mod tests {
 
     #[test]
     fn write_requests_per_second() {
-        let metrics_service = Arc::new(MetricsService::new());
+        let metrics_service = Arc::new(LatencyTracker::new());
         const THREADS: usize = 16;
 
         let stop = Arc::new(AtomicBool::new(false));
@@ -606,7 +606,7 @@ mod tests {
             let service_clone = metrics_service.clone();
             handles.push(thread::spawn(move || {
                 while !stop.load(Ordering::Relaxed) {
-                    service_clone.record_latency(500);
+                    service_clone.record_latency_ms(500);
                     ops.fetch_add(1, Ordering::Relaxed);
                 }
                 service_clone.flush_thread_local();
