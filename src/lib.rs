@@ -6,15 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
-const WINDOW: u64 = 10;
-const BUCKETS: usize = WINDOW as usize + 1;
-const STRIPES: usize = 64;
-const FLUSH_EVERY: u32 = 512;
-
-const LINEAR_MAX_MS: u64 = 5000;
-const LINEAR_STEP: u64 = 10;
-const LINEAR_BINS: usize = (LINEAR_MAX_MS / LINEAR_STEP) as usize;
-const HISTOGRAM_BINS: usize = LINEAR_BINS + 1;
+include!(concat!(env!("OUT_DIR"), "/config.rs"));
 
 static NEXT_SERVICE_ID: AtomicUsize = AtomicUsize::new(1);
 

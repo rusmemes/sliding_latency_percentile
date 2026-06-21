@@ -1,9 +1,10 @@
 [package]
 name = "latency_tracker"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "A high-performance, lock-free latency percentile tracker. `LatencyTracker` is designed for extremely high write throughput in multi-threaded services. It maintains a rolling time window of latency observations and provides fast percentile queries (P50, P90, P95, P99) without storing individual samples."
 license = "MIT"
+build = "build.rs"
 
 [dev-dependencies]
 rand = "0.10.1"

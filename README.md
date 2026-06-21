@@ -14,6 +14,7 @@ A high-performance, lock-free latency percentile tracker for Rust.
 - Service isolation (multiple independent trackers)
 - Constant memory usage
 - High write throughput
+- Compile-time configuration via environment variables
 
 ## How It Works
 
@@ -21,9 +22,9 @@ A high-performance, lock-free latency percentile tracker for Rust.
 
 Latency values are mapped into histogram bins:
 
-- Linear resolution: 10 ms
-- Range: 0–5000 ms
-- Values above 5000 ms are clamped into the final bucket
+- Linear resolution: 10 ms by default
+- Range: 0–5000 ms by default
+- Values above the configured maximum latency are clamped into the final bucket
 
 ### Thread-local batching
 
@@ -37,15 +38,21 @@ Benefits:
 
 ### Striped architecture
 
-The tracker uses 64 independent stripes. Each thread is assigned a stripe based on its thread ID hash.
+The tracker uses 64 independent stripes by default. Each thread is assigned a stripe based on its thread ID hash.
+
+This significantly reduces contention during updates.
+
+The number of stripes can be configured at compile time using the `LATENCY_TRACKER_STRIPES` environment variable. The value must be a power of two. Each thread is assigned a stripe based on its thread ID hash.
 
 This significantly reduces contention during updates.
 
 ### Sliding Window
 
-Data is stored in per-second buckets across a rolling 10-second window.
+Data is stored in per-second buckets across a rolling 10-second window by default.
 
 Only buckets belonging to the active window are used when computing percentiles.
+
+The window size can be configured at compile time using the `LATENCY_TRACKER_WINDOW` environment variable.
 
 ## Installation
 
@@ -125,13 +132,47 @@ Percentile calculation scans the histogram:
 
 ## Default Configuration
 
-| Parameter | Value |
-|------------|---------|
-| Window | 10 seconds |
-| Stripes | 64 |
-| Flush threshold | 512 samples |
-| Histogram step | 10 ms |
-| Maximum tracked latency | 5000 ms |
+The library uses compile-time constants for its internal data structures. By default, the configuration is:
+
+| Parameter | Environment variable | Default value |
+|------------|----------------------|---------------|
+| Window | `LATENCY_TRACKER_WINDOW` | `10` seconds |
+| Stripes | `LATENCY_TRACKER_STRIPES` | `64` |
+| Flush threshold | `LATENCY_TRACKER_FLUSH_EVERY` | `512` samples |
+| Histogram step | `LATENCY_TRACKER_LINEAR_STEP` | `10` ms |
+| Maximum tracked latency | `LATENCY_TRACKER_LINEAR_MAX_MS` | `5000` ms |
+
+These values can be overridden at compile time using environment variables.
+
+Example:
+```bash
+LATENCY_TRACKER_WINDOW=30
+LATENCY_TRACKER_STRIPES=128
+LATENCY_TRACKER_FLUSH_EVERY=1024
+LATENCY_TRACKER_LINEAR_STEP=20
+LATENCY_TRACKER_LINEAR_MAX_MS=10000
+cargo build
+```
+
+For tests:
+```bash
+LATENCY_TRACKER_WINDOW=30 LATENCY_TRACKER_STRIPES=128 cargo test
+````
+
+### Configuration constraints
+
+The following constraints are validated during compilation:
+
+- `LATENCY_TRACKER_WINDOW` must be greater than `0`
+- `LATENCY_TRACKER_STRIPES` must be greater than `0`
+- `LATENCY_TRACKER_STRIPES` must be a power of two
+- `LATENCY_TRACKER_FLUSH_EVERY` must be greater than `0`
+- `LATENCY_TRACKER_LINEAR_STEP` must be greater than `0`
+- `LATENCY_TRACKER_LINEAR_MAX_MS` must be greater than `0`
+- `LATENCY_TRACKER_LINEAR_MAX_MS` must be greater than or equal to `LATENCY_TRACKER_LINEAR_STEP`
+- `LATENCY_TRACKER_LINEAR_MAX_MS` must be divisible by `LATENCY_TRACKER_LINEAR_STEP`
+
+Because these values affect array sizes and internal memory layout, they are compile-time settings, not runtime settings.
 
 ## Testing
 
